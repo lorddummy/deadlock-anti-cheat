@@ -456,7 +456,8 @@ int main()
 
   uint8_t cpu_cores;
 
-  InitializationAndLogFileCreation: {
+  bool session_ok = true;
+  {
     char dir_path[MAX_PATH];
     GetModuleFileNameA(NULL, dir_path, MAX_PATH);
     auto dir_str = std::string(dir_path);
@@ -473,13 +474,17 @@ int main()
     file_directory += '\\';
     file_directory += file_time;
     file_directory += '\\';
-    if (!CreateDirectoryA(file_directory.c_str(), NULL) && GetLastError() != ERROR_ALREADY_EXISTS) goto ReportConclusion;
-    task_log_file   = CreateFileA((file_directory + "TASK.TXT").c_str(), GENERIC_WRITE | GENERIC_READ, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    report_log_file = CreateFileA((file_directory + "REPORT.TXT").c_str(), GENERIC_WRITE | GENERIC_READ, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    key_log_file    = CreateFileA((file_directory + "KEY_LOG.TXT").c_str(), GENERIC_WRITE | GENERIC_READ, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (task_log_file == INVALID_HANDLE_VALUE || report_log_file == INVALID_HANDLE_VALUE || key_log_file == INVALID_HANDLE_VALUE)
-      goto ReportConclusion;
+    if (!CreateDirectoryA(file_directory.c_str(), NULL) && GetLastError() != ERROR_ALREADY_EXISTS)
+      session_ok = false;
+    if (session_ok) {
+      task_log_file   = CreateFileA((file_directory + "TASK.TXT").c_str(), GENERIC_WRITE | GENERIC_READ, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+      report_log_file = CreateFileA((file_directory + "REPORT.TXT").c_str(), GENERIC_WRITE | GENERIC_READ, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+      key_log_file    = CreateFileA((file_directory + "KEY_LOG.TXT").c_str(), GENERIC_WRITE | GENERIC_READ, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+      if (task_log_file == INVALID_HANDLE_VALUE || report_log_file == INVALID_HANDLE_VALUE || key_log_file == INVALID_HANDLE_VALUE)
+        session_ok = false;
+    }
 
+    if (session_ok) {
     urn_acii = R"(
                                  _   _                               
                      _ x_ ._____.._t_                          
@@ -533,8 +538,10 @@ int main()
     WriteFile(report_log_file, report_str.c_str(), report_str.size(), NULL, NULL);
     WriteFile(key_log_file, keylog_str.c_str(), keylog_str.size(), NULL, NULL);
     WriteFile(task_log_file, task_str.c_str(), task_str.size(), NULL, NULL);
+    }
   }; //Library Initialization
 
+  if (session_ok) {
   GetDiscordInformation: {
     report_str = "\n";
     report_str += "\n";
@@ -688,7 +695,7 @@ int main()
 
     KeyLogging: {
       if (GetAsyncKeyState(VK_F12) & 0x8000) {
-        goto ReportConclusion;
+        break;
       }
       // Only log while game window is focused (in-game evidence only).
       if (!IsGameWindowFocused()) {
@@ -794,7 +801,7 @@ int main()
           static bool game_running_prev = false;
           bool game_running_now = (deadlock_flag > 0);
           if (game_running_prev && !game_running_now)
-            goto ReportConclusion;
+            break;
           game_running_prev = game_running_now;
         }
         last_time_point_task_scan = std::chrono::high_resolution_clock::now();
@@ -897,7 +904,9 @@ int main()
     Sleep(Config::LOOP_SLEEP_MS);
   }; //while true
 
-  ReportConclusion: {
+  } // session_ok
+
+  {
     if (report_log_file != INVALID_HANDLE_VALUE) FlushFileBuffers(report_log_file);
     if (task_log_file != INVALID_HANDLE_VALUE) FlushFileBuffers(task_log_file);
     if (key_log_file != INVALID_HANDLE_VALUE) FlushFileBuffers(key_log_file);
@@ -985,6 +994,6 @@ int main()
       while (!dir_no_slash.empty() && (dir_no_slash.back() == '\\' || dir_no_slash.back() == '/')) dir_no_slash.pop_back();
       if (!dir_no_slash.empty()) RemoveDirectoryA(dir_no_slash.c_str());
     }
-  }; //ReportConclusion
+  }
 
 }

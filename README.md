@@ -61,10 +61,6 @@ The client collects and sends to your Discord (on F12): Windows username, OS ver
 - Use one webhook per tournament or tier so reports are easy to sort.
 - Some antivirus may flag the .exe (keyboard/screenshot behavior); players may need to allow or whitelist it.
 
-## Repo (optional)
-
-On GitHub, **Settings → General**: set a short description (e.g. “Deadlock anticheat – session logging and Discord upload”). Add **Topics** such as `deadlock`, `anticheat`, `c++`, `windows` so the repo is easier to find.
-
 ## Summary
 
 - Intervals use **seconds** (task scan 3 s, screenshots 5 s, keylog 50 ms).

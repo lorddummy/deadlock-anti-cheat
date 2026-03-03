@@ -40,6 +40,7 @@ In `UrnItAnticheat.cpp`, `Config::`:
 - `KEYLOG_INTERVAL_SEC` – key sampling interval (default 0.05 s)
 - `WEBHOOK_BATCH_SIZE`, `WEBHOOK_RATE_LIMIT_MS`, `UPLOAD_TIMEOUT_MS` – Discord upload behavior
 - `AUTO_UPLOAD_ON_GAME_EXIT` – if `true` (default), session ends and uploads when the Deadlock process exits; set to `false` to require F12 to end and upload
+- `UPLOAD_WAIT_TIMEOUT_SEC` – max seconds to wait for Discord upload (default 30); upload runs in background, console shows "Uploading…" then exits when done or when timeout is reached
 
 ## “Upload it all to here”
 

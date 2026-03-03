@@ -11,6 +11,7 @@
 #include <chrono>
 #include <string>
 #include <thread>
+#include <future>
 #include <codecvt>
 #include <fstream>
 #include <sstream>
@@ -34,6 +35,7 @@ namespace Config {
   const size_t MAX_UPLOAD_FILE_BYTES   = 25u * 1024 * 1024;
   const size_t MAX_SCREENSHOT_UPLOAD_BYTES = 8u * 1024 * 1024;  // skip huge BMPs in upload (still on disk)
   const bool   AUTO_UPLOAD_ON_GAME_EXIT = true;  // when true, session ends and uploads automatically when Deadlock process exits; F12 still works as manual end
+  const unsigned UPLOAD_WAIT_TIMEOUT_SEC = 30;  // max seconds to wait for Discord upload before exiting (upload runs in background)
 }
 
 // Format: category name ("cheats" or "performance") then one or more process names (e.g. "cheat.exe").
@@ -800,10 +802,19 @@ int main()
     if (task_log_file != INVALID_HANDLE_VALUE) FlushFileBuffers(task_log_file);
     if (key_log_file != INVALID_HANDLE_VALUE) FlushFileBuffers(key_log_file);
 
-    bool upload_ok = UploadSessionToDiscord(exe_directory, file_directory);
+    // Run upload in background so session end doesn't block; wait up to UPLOAD_WAIT_TIMEOUT_SEC.
+    std::cout << "Uploading…\n";
+    std::future<bool> upload_future = std::async(std::launch::async, UploadSessionToDiscord, exe_directory, file_directory);
+    bool upload_ok = false;
+    bool upload_done = (upload_future.wait_for(std::chrono::seconds(Config::UPLOAD_WAIT_TIMEOUT_SEC)) == std::future_status::ready);
+    if (upload_done)
+      upload_ok = upload_future.get();
     if (report_log_file != INVALID_HANDLE_VALUE) {
       report_str = "\nDiscord upload: ";
-      report_str += upload_ok ? "completed\n" : "failed (no webhook or network error)\n";
+      if (upload_done)
+        report_str += upload_ok ? "completed\n" : "failed (no webhook or network error)\n";
+      else
+        report_str += "timed out (may be incomplete)\n";
       WriteFile(report_log_file, report_str.c_str(), (DWORD)report_str.size(), NULL, NULL);
       FlushFileBuffers(report_log_file);
     }

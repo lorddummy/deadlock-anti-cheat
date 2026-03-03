@@ -33,6 +33,7 @@ namespace Config {
   const DWORD UPLOAD_TIMEOUT_MS        = 30000;
   const size_t MAX_UPLOAD_FILE_BYTES   = 25u * 1024 * 1024;
   const size_t MAX_SCREENSHOT_UPLOAD_BYTES = 8u * 1024 * 1024;  // skip huge BMPs in upload (still on disk)
+  const bool   AUTO_UPLOAD_ON_GAME_EXIT = true;  // when true, session ends and uploads automatically when Deadlock process exits; F12 still works as manual end
 }
 
 // Format: category name ("cheats" or "performance") then one or more process names (e.g. "cheat.exe").
@@ -79,12 +80,31 @@ inline std::string VkToKeyName(int vk) {
 }
 
 // Anticheat: only log input when game window is focused (evidence is in-game only, less privacy surface).
-// Set to empty string to log regardless of focus.
+// Set to empty string to log regardless of focus. Partial match so "Deadlock - Main Menu" or "Deadlock | 60 FPS" works.
 static const wchar_t* GAME_WINDOW_TITLE = L"Deadlock";
 
+static BOOL CALLBACK EnumFindWindowByTitleProc(HWND hwnd, LPARAM lParam) {
+  HWND* out = (HWND*)lParam;
+  wchar_t title[256] = {};
+  if (GetWindowTextW(hwnd, title, 256) > 0 && wcsstr(title, GAME_WINDOW_TITLE)) {
+    *out = hwnd;
+    return FALSE;  // stop enumeration
+  }
+  return TRUE;
+}
+
+// Finds game window: exact title match first, then any window whose title contains GAME_WINDOW_TITLE.
+static HWND FindGameWindow() {
+  if (!GAME_WINDOW_TITLE || GAME_WINDOW_TITLE[0] == L'\0') return NULL;
+  HWND h = FindWindowW(NULL, GAME_WINDOW_TITLE);
+  if (h) return h;
+  HWND found = NULL;
+  EnumWindows(EnumFindWindowByTitleProc, (LPARAM)&found);
+  return found;
+}
+
 inline bool IsGameWindowFocused() {
-  if (!GAME_WINDOW_TITLE || GAME_WINDOW_TITLE[0] == L'\0') return true;
-  HWND game = FindWindowW(NULL, GAME_WINDOW_TITLE);
+  HWND game = FindGameWindow();
   if (!game) return true;  // game not running: still log (e.g. launcher) or set title to match launcher
   return GetForegroundWindow() == game;
 }
@@ -435,7 +455,7 @@ int main()
 
       report_str +="CPU Model: " + std::string(cpu_info.brand_string) + "\n";
       report_str +="Logical Core Count: " + std::to_string(cpu_cores) + "\n";
-      report_str +="Vender: " + std::string(cpu_info.vendor) + "\n";
+      report_str +="Vendor: " + std::string(cpu_info.vendor) + "\n";
       report_str +="Cache Count: " + std::to_string(cpu_cache_info.size) + "\n";
 
       switch (cpu_microarchitecture) {
@@ -630,6 +650,14 @@ int main()
         }
 
         if (deadlock_flag > 1) prgrm_flags.deadlock_repeat_flag = 1;
+        // Auto-end session when game process exits (upload runs without needing F12)
+        if (Config::AUTO_UPLOAD_ON_GAME_EXIT) {
+          static bool game_running_prev = false;
+          bool game_running_now = (deadlock_flag > 0);
+          if (game_running_prev && !game_running_now)
+            goto ReportConclusion;
+          game_running_prev = game_running_now;
+        }
         last_time_point_task_scan = std::chrono::high_resolution_clock::now();
       }; //If Process Search Successful
 
@@ -660,7 +688,7 @@ int main()
       INT x, y;
 
       desktop_handle = GetDC(NULL);
-      HWND game_hwnd = (GAME_WINDOW_TITLE && GAME_WINDOW_TITLE[0]) ? FindWindowW(NULL, GAME_WINDOW_TITLE) : NULL;
+      HWND game_hwnd = FindGameWindow();
       if (game_hwnd) {
         RECT r = {};
         if (GetWindowRect(game_hwnd, &r) && (r.right > r.left) && (r.bottom > r.top)) {
@@ -772,7 +800,13 @@ int main()
     if (task_log_file != INVALID_HANDLE_VALUE) FlushFileBuffers(task_log_file);
     if (key_log_file != INVALID_HANDLE_VALUE) FlushFileBuffers(key_log_file);
 
-    UploadSessionToDiscord(exe_directory, file_directory);
+    bool upload_ok = UploadSessionToDiscord(exe_directory, file_directory);
+    if (report_log_file != INVALID_HANDLE_VALUE) {
+      report_str = "\nDiscord upload: ";
+      report_str += upload_ok ? "completed\n" : "failed (no webhook or network error)\n";
+      WriteFile(report_log_file, report_str.c_str(), (DWORD)report_str.size(), NULL, NULL);
+      FlushFileBuffers(report_log_file);
+    }
 
     if (report_log_file != INVALID_HANDLE_VALUE) { CloseHandle(report_log_file); report_log_file = INVALID_HANDLE_VALUE; }
     if (task_log_file != INVALID_HANDLE_VALUE)   { CloseHandle(task_log_file);   task_log_file = INVALID_HANDLE_VALUE; }
